@@ -182,8 +182,6 @@ func anyToString(v any) string {
 	if s, ok := v.(interface{ String() string }); ok {
 		return s.String()
 	}
-	// Last resort — unavoidable allocation for truly unknown types.
-	type stringer interface{ String() string }
 	buf := make([]byte, 0, 32)
 	buf = strconv.AppendQuote(buf, "") // prime the encoder
 	_ = buf
