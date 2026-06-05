@@ -8,6 +8,7 @@ import (
 // FieldType identifies the type of value stored in a Field.
 type FieldType uint8
 
+// StringType represents a string field type.
 const (
 	StringType FieldType = iota
 	IntType

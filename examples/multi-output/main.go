@@ -39,7 +39,7 @@ func main() {
 	fmt.Fprintf(os.Stderr, "\nJSON log written to: %s\n", logPath)
 
 	// Show the file contents on stdout.
-	raw, err := os.ReadFile(logPath)
+	raw, err := os.ReadFile(filepath.Clean(logPath))
 	if err == nil {
 		fmt.Printf("\n--- %s ---\n%s", logPath, raw)
 	}

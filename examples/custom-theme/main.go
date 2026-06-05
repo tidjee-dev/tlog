@@ -24,7 +24,7 @@ import (
 
 func separator(label string) {
 	style := lipgloss.NewStyle().Foreground(lipgloss.Color("#fff")).Bold(true)
-	fmt.Fprintf(os.Stdout, "\n%s\n", style.Render(fmt.Sprintf("── %s ──", label)))
+	_, _ = fmt.Fprintf(os.Stdout, "\n%s\n", style.Render(fmt.Sprintf("── %s ──", label)))
 }
 
 func demo(log *tlog.Logger) {

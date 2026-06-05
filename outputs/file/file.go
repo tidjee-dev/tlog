@@ -2,6 +2,7 @@ package file
 
 import (
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/tidjee-dev/tlog/internal/writer"
@@ -20,7 +21,12 @@ type File struct {
 // The file is created with mode 0600 if it does not exist.
 // Returns an error if the file cannot be opened.
 func New(path string) (*File, error) {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	baseDir := "./logs"
+
+	clean := filepath.Clean(path)
+	fullPath := filepath.Join(baseDir, clean)
+
+	f, err := os.OpenFile(fullPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, err
 	}

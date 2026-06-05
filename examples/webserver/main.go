@@ -23,9 +23,11 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand"
+	mathrand "math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -95,7 +97,9 @@ func loggerFrom(ctx context.Context) *dualLog {
 func withRequestLogger(base *dualLog) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			reqID := fmt.Sprintf("%08x", rand.Uint32())
+			var b [4]byte
+			_, _ = rand.Read(b[:])
+			reqID := fmt.Sprintf("%08x", binary.LittleEndian.Uint32(b[:]))
 			log := base.With(
 				tlog.String("request_id", reqID),
 				tlog.String("method", r.Method),
@@ -160,26 +164,24 @@ func (rw *responseWriter) WriteHeader(code int) {
 
 // ── handlers ──────────────────────────────────────────────────────────────────
 
-// ── handlers ──────────────────────────────────────────────────────────────────
-
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	loggerFrom(r.Context()).Debug("health check")
-	fmt.Fprintln(w, `{"status":"ok"}`)
+	_, _ = fmt.Fprintln(w, `{"status":"ok"}`)
 }
 
 func handleUsers(w http.ResponseWriter, r *http.Request) {
 	log := loggerFrom(r.Context())
 	log.Debug("fetching users", tlog.String("query", r.URL.RawQuery))
 
-	// Simulate a slow DB query occasionally.
-	delay := time.Duration(rand.Intn(80)+10) * time.Millisecond
+	// #nosec G404
+	delay := time.Duration(mathrand.IntN(80)+10) * time.Millisecond
 	time.Sleep(delay)
 	if delay > 60*time.Millisecond {
 		log.Warn("slow query detected", tlog.Duration("query_time", delay))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintln(w, `[{"id":1,"name":"alice"},{"id":2,"name":"bob"}]`)
+	_, _ = fmt.Fprintln(w, `[{"id":1,"name":"alice"},{"id":2,"name":"bob"}]`)
 }
 
 func handleOrders(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +203,7 @@ func handleOrders(w http.ResponseWriter, r *http.Request) {
 
 	log.Info("order fetched", tlog.Int("order_id", id))
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"id":%d,"status":"shipped"}`, id)
+	_, _ = fmt.Fprintf(w, `{"id":%d,"status":"shipped"}`, id)
 }
 
 func handlePanic(_ http.ResponseWriter, r *http.Request) {
@@ -262,13 +264,21 @@ func main() {
 
 	chain := withRequestLogger(log)(panicRecovery(accessLog(mux)))
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		log.Error("failed to listen", tlog.Err(err))
 		os.Exit(1)
 	}
 	addr := ln.Addr().String()
-	srv := &http.Server{Handler: chain}
+	srv := &http.Server{
+		Handler:           chain,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
 	log.Info("server listening", tlog.String("addr", addr))
 
@@ -289,9 +299,16 @@ func main() {
 		client := &http.Client{Timeout: 5 * time.Second}
 		base := "http://" + addr
 		for _, path := range routes {
-			resp, reqErr := client.Get(base + path)
+			req, _ := http.NewRequestWithContext(
+				context.Background(),
+				http.MethodGet,
+				base+path,
+				nil,
+			)
+
+			resp, reqErr := client.Do(req)
 			if reqErr == nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
@@ -300,7 +317,7 @@ func main() {
 			tlog.String("text_log", textPath),
 			tlog.String("json_log", jsonPath),
 		)
-		srv.Shutdown(context.Background())
+		_ = srv.Shutdown(context.Background())
 	}()
 
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

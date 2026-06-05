@@ -10,9 +10,11 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -122,7 +124,11 @@ func run(e entry) {
 	fmt.Println(styleRunHeader.Render("── running: " + e.name + " ──"))
 	fmt.Println()
 
-	cmd := exec.Command("go", "run", "./"+e.dir+"/")
+	// #nosec G204 -- we're not passing user input to the shell, just a static command
+	cmd := exec.CommandContext(
+		context.Background(),
+		"go", "run", "./"+filepath.Clean(e.dir)+"/",
+	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -135,7 +141,7 @@ func run(e entry) {
 
 	fmt.Println()
 	fmt.Print(styleDone.Render("── done. Press Enter to return to the menu..."))
-	bufio.NewReader(os.Stdin).ReadString('\n')
+	_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
 }
 
 // ── main loop ─────────────────────────────────────────────────────────────────
@@ -169,7 +175,7 @@ func main() {
 				fmt.Println()
 				fmt.Println("  " + styleWarn.Render(fmt.Sprintf("unknown choice %q — enter a number 1-%d or q", choice, len(examples))))
 				fmt.Print("  Press Enter to continue...")
-				reader.ReadString('\n')
+				_, _ = reader.ReadString('\n')
 			}
 		}
 	}

@@ -77,7 +77,7 @@ func New(opts ...Option) *Logger {
 			// Apply WithStyles modifier on top of resolved theme.
 			if cfg.stylesModifier != nil {
 				if theme == nil {
-					s := styles.Default()
+					s := styles.Dev()
 					theme = &s
 				}
 				cfg.stylesModifier(theme)
@@ -184,7 +184,8 @@ func (l *Logger) Close() {
 
 // log is the internal dispatch path shared by all level methods.
 func (l *Logger) log(lvl level.Level, msg string, fields ...interfaces.Field) {
-	if lvl < level.Level(l.atomicLevel.Load()) {
+	atomicLevel := l.atomicLevel.Load()
+	if lvl < level.Level(atomicLevel) {
 		return
 	}
 	if l.cfg.Formatter == nil {

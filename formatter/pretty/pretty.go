@@ -58,12 +58,12 @@ func WithTTY(tty bool) Option {
 	}
 }
 
-// New returns a PrettyFormatter. By default it uses the Default theme,
+// New returns a PrettyFormatter. By default it uses the Dev theme,
 // the standard timestamp format, and assumes a TTY.
 // Pass WithTTY(false) to get plain-text output from this formatter.
 func New(opts ...Option) *PrettyFormatter {
 	f := &PrettyFormatter{
-		styles:          styles.Default(),
+		styles:          styles.Dev(),
 		timestampFormat: "2006-01-02T15:04:05.000",
 		isTTY:           true,
 	}

@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -397,7 +398,11 @@ func TestFatalCallsExit(t *testing.T) {
 		return
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=TestFatalCallsExit")
+	cmd := exec.CommandContext(
+		context.Background(),
+		os.Args[0],
+		"-test.run=TestFatalCallsExit",
+	)
 	cmd.Env = append(os.Environ(), "BE_FATAL=1")
 	err := cmd.Run()
 

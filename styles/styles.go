@@ -21,7 +21,7 @@ type Styles struct {
 	Caller     lipgloss.Style
 }
 
-// [Default theme] Dev is a high-contrast, verbose theme for active development.
+// Dev is a high-contrast, verbose theme for active development. [Default]
 func Dev() Styles {
 	return Styles{
 		Timestamp:  lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
@@ -39,10 +39,10 @@ func Dev() Styles {
 	}
 }
 
-// Default = "Dev".
-func Default() Styles {
-	return Dev()
-}
+// // Default = "Dev".
+// func Default() Styles {
+// 	return Dev()
+// }
 
 // Minimal is a subdued, low-noise theme for developers who prefer quiet output.
 func Minimal() Styles {
@@ -99,7 +99,6 @@ func NoColor() Styles {
 		Caller:     plain,
 	}
 }
-
 
 // HTTP is a theme tuned for web-server access logging. Cyan keys make
 // method/path/status/latency easy to scan; green INFO signals success,

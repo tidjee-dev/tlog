@@ -6,8 +6,9 @@ import (
 )
 
 // Level represents a log severity level.
-type Level uint8
+type Level uint32
 
+// Trace is the most verbose logging level.
 const (
 	Trace Level = iota
 	Debug

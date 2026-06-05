@@ -13,11 +13,10 @@ var allThemes = []struct {
 	name string
 	fn   func() styles.Styles
 }{
-	{"Default", styles.Default},
+	{"Dev", styles.Dev},
 	{"Minimal", styles.Minimal},
 	{"Monochrome", styles.Monochrome},
 	{"NoColor", styles.NoColor},
-	{"Dev", styles.Dev},
 	{"Production", styles.Production},
 	{"Badgy", styles.Badgy},
 	{"HTTP", styles.HTTP},

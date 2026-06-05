@@ -53,7 +53,7 @@ func TestWithTTYFalseOverride(t *testing.T) {
 }
 
 func TestWithStylesStored(t *testing.T) {
-	c := New(WithStyles(styles.Default()))
+	c := New(WithStyles(styles.Dev()))
 	s, ok := c.Styles()
 	assert.True(t, ok)
 	_ = s // styles.Styles is a value type; presence is the assertion
