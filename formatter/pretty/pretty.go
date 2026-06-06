@@ -8,6 +8,8 @@
 package pretty
 
 import (
+	"encoding/json"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -213,11 +215,16 @@ func formatValue(f interfaces.Field) string {
 		}
 		return s
 	default:
-		// AnyType: attempt String() interface, then give up gracefully.
 		if s, ok := f.Value.(interface{ String() string }); ok {
 			return s.String()
 		}
-		return "<unsupported>"
+
+		b, err := json.Marshal(f.Value)
+		if err == nil {
+			return string(b)
+		}
+
+		return fmt.Sprintf("%+v", f.Value)
 	}
 }
 
