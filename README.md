@@ -263,11 +263,10 @@ log := tlog.New(
 
 | Theme        | Description                                         |
 | ------------ | --------------------------------------------------- |
-| `Default`    | Balanced colors, easy to read                       |
+| `Dev`        | High contrast, verbose dev mode (default)           |
 | `Minimal`    | Clean, low visual noise                             |
 | `Monochrome` | Bold/italic only, no color                          |
 | `NoColor`    | No ANSI codes — CI / file output                    |
-| `Dev`        | High contrast, verbose dev mode                     |
 | `Production` | Subdued, ops-oriented                               |
 | `Badgy`      | Badge-style level pills with background color       |
 | `HTTP`       | Web-server palette: cyan keys, warm-yellow values   |
@@ -310,19 +309,19 @@ Silently drops all log entries. Useful in tests and benchmarks where output is n
 
 Benchmarks run on AMD Ryzen 5 PRO 4650G · Go 1.26.3 · `go test -bench=. -benchmem ./benchmarks/`
 
-| Scenario                          | ns/op  |  B/op | allocs/op |
-| --------------------------------- | -----: | ----: | --------: |
-| `Info` no fields / text           |    528 |    88 |         3 |
-| `Info` no fields / JSON           |    322 |   112 |         2 |
-| `Info` 5 fields / text            |  1 470 |   388 |         7 |
-| `Info` 5 fields / JSON            |    910 |   419 |         4 |
-| `Info` 10 fields / text           |  2 022 |   684 |        11 |
-| `Info` 10 fields / JSON           |  1 328 |   712 |         6 |
-| `Debug` filtered (level=Info)     |     42 |    48 |         1 |
-| `Info` + caller / JSON            |  1 015 |   512 |         6 |
-| Parallel `Info` / JSON            |    170 |   176 |         3 |
-| `Info` 5 fields / pretty (styled) | 27 132 | 2 498 |       116 |
-| `Info` 5 fields / pretty (NoColor)|  9 460 |   392 |         8 |
+| Scenario                           |  ns/op |  B/op | allocs/op |
+| ---------------------------------- | -----: | ----: | --------: |
+| `Info` no fields / text            |    528 |    88 |         3 |
+| `Info` no fields / JSON            |    322 |   112 |         2 |
+| `Info` 5 fields / text             |  1 470 |   388 |         7 |
+| `Info` 5 fields / JSON             |    910 |   419 |         4 |
+| `Info` 10 fields / text            |  2 022 |   684 |        11 |
+| `Info` 10 fields / JSON            |  1 328 |   712 |         6 |
+| `Debug` filtered (level=Info)      |     42 |    48 |         1 |
+| `Info` + caller / JSON             |  1 015 |   512 |         6 |
+| Parallel `Info` / JSON             |    170 |   176 |         3 |
+| `Info` 5 fields / pretty (styled)  | 27 132 | 2 498 |       116 |
+| `Info` 5 fields / pretty (NoColor) |  9 460 |   392 |         8 |
 
 See [`benchmarks/`](benchmarks/) for the full suite including reference comparisons
 against `slog`, `zap`, and `zerolog`.
