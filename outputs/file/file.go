@@ -31,7 +31,6 @@ type File struct {
 // Permissions:
 //   - directories: 0700
 //   - files: 0600
-
 func New(appName string, path string) (*File, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
