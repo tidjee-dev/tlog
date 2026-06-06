@@ -48,8 +48,9 @@ build: ## Build debug binary into ./dist
 	go build -o $(BUILD_DIR)/$(BIN) .
 
 build-release: ## Build optimized release binary
+	@printf "\n$(WHITE)Building release binary...$(RESET)\n"
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 go build \
+	@CGO_ENABLED=0 go build \
 		-trimpath \
 		-ldflags="$(LDFLAGS)" \
 		-o $(BUILD_DIR)/$(BIN) \
