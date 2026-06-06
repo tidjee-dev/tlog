@@ -219,7 +219,7 @@ func main() {
 	jsonPath := filepath.Join(dir, "tlog-webserver.jsonl")
 
 	// ── human logger: pretty console (stderr) + plain text file ──────────────
-	textFile, err := file.New(textPath)
+	textFile, err := file.New("tlog-demo", textPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open text log: %v\n", err)
 		os.Exit(1)
@@ -231,7 +231,7 @@ func main() {
 	)
 
 	// ── machine logger: JSON stdout + JSON file ───────────────────────────────
-	jsonFile, err := file.New(jsonPath)
+	jsonFile, err := file.New("tlog-demo", jsonPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open json log: %v\n", err)
 		os.Exit(1)

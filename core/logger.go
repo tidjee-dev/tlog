@@ -39,7 +39,7 @@ func New(opts ...Option) *Logger {
 	// set at this point (all options have been applied), so failures are routed
 	// correctly regardless of option order.
 	for _, path := range cfg.filePaths {
-		f, err := fileout.New(path)
+		f, err := fileout.New("tlog-demo", path)
 		if err != nil {
 			cfg.ErrorHandler(err)
 			continue
