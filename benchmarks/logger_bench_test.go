@@ -161,7 +161,7 @@ func BenchmarkInfo_ConsoleOutput_JSON(b *testing.B) {
 }
 
 func BenchmarkInfo_FileOutput_JSON(b *testing.B) {
-	log := tlog.New(tlog.WithFile(b.TempDir()+"/bench.log"), tlog.WithJSON())
+	log := tlog.New(tlog.WithFile("tlog-bench", b.TempDir()+"/bench.log"), tlog.WithJSON())
 	b.Cleanup(func() { log.Close() })
 	b.ResetTimer()
 	for b.Loop() {

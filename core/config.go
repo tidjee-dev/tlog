@@ -13,6 +13,7 @@ import (
 // Config holds all configuration for a Logger.
 // It is built once via functional options and never mutated after New returns.
 type Config struct {
+	AppName         string
 	Level           level.Level
 	Clock           clock.Clock
 	Outputs         []interfaces.Output
@@ -102,8 +103,9 @@ func WithJSON(opts ...json.Option) Option {
 // WithFile adds a file output that appends to the given path.
 // The file is opened (or created) during New. If it cannot be opened, the
 // error is routed to the error handler.
-func WithFile(path string) Option {
+func WithFile(appName string, path string) Option {
 	return func(c *Config) {
+		c.AppName = appName
 		c.filePaths = append(c.filePaths, path)
 	}
 }

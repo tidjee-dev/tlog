@@ -28,6 +28,7 @@ type Logger struct {
 // If no formatter is set but outputs are present, the text formatter is used.
 func New(opts ...Option) *Logger {
 	cfg := Config{
+		AppName:      "tlog-dev-demo", // default app name for file outputs; can be overridden by WithFile or custom file output
 		Level:        level.Trace,
 		Clock:        clock.Real{},
 		ErrorHandler: func(error) {},
@@ -39,7 +40,7 @@ func New(opts ...Option) *Logger {
 	// set at this point (all options have been applied), so failures are routed
 	// correctly regardless of option order.
 	for _, path := range cfg.filePaths {
-		f, err := fileout.New("tlog-demo", path)
+		f, err := fileout.New(cfg.AppName, path)
 		if err != nil {
 			cfg.ErrorHandler(err)
 			continue

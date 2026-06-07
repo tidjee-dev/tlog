@@ -26,7 +26,7 @@ func main() {
 		// Human-readable console (pretty on TTY, plain text otherwise).
 		tlog.WithConsole(),
 		// Machine-readable JSON appended to a file.
-		tlog.WithFile(logPath),
+		tlog.WithFile("tlog-multi-output-example", logPath),
 		tlog.WithJSON(),
 	)
 	defer log.Close()
@@ -48,7 +48,7 @@ func main() {
 	log2 := tlog.New(
 		tlog.WithConsole(console.WithWriter(os.Stdout), console.WithTTY(false)),
 		tlog.WithFormatter(text.New()),
-		tlog.WithFile(logPath),
+		tlog.WithFile("tlog-multi-output-example", logPath),
 		tlog.WithJSON(),
 	)
 	defer log2.Close()

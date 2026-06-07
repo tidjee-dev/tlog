@@ -68,7 +68,7 @@ func WithJSON(opts ...jsonfmt.Option) Option { return core.WithJSON(opts...) }
 // WithFile adds a file output that appends to the given path.
 // The file is created if it does not exist. If opening fails, the error is
 // routed to the error handler.
-func WithFile(path string) Option { return core.WithFile(path) }
+func WithFile(appName string, path string) Option { return core.WithFile(appName, path) }
 
 // Styles is the set of lipgloss styles used by the pretty formatter.
 // Use it as the parameter type when calling WithTheme or WithStyles.

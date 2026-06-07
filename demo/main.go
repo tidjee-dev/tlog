@@ -26,6 +26,15 @@ func main() {
 		),
 	)
 
+	fileLog := tlog.New(
+		tlog.WithFile("tlog-dev-demo2", "demo.log"),
+	)
+
+	fileJsonLog := tlog.New(
+		tlog.WithFile("tlog-dev-demo2", "demo.jsonl"),
+		tlog.WithJSON(),
+	)
+
 	// Simulate some work
 	start := time.Now()
 	// time.Sleep(1 * time.Nanosecond)
@@ -41,8 +50,8 @@ func main() {
 		tlog.String("name", "John Doe"),
 		tlog.Bool("active", true),
 		tlog.Float64("score", 99.5),
-		tlog.Duration("duration elapsed", elapsed),
-		tlog.Duration("duration ttl", ttl),
+		tlog.Duration("duration_elapsed", elapsed),
+		tlog.Duration("duration_ttl", ttl),
 		tlog.Err(errors.New("something failed")),
 		tlog.Any("any_string", "raw-any"),
 		tlog.Any("any_struct", map[string]any{
@@ -56,4 +65,6 @@ func main() {
 	jsonLog.Info("user created", fields...)
 	fmt.Println()
 	textLog.Info("user created", fields...)
+	fileLog.Info("user created", fields...)
+	fileJsonLog.Info("user created", fields...)
 }
