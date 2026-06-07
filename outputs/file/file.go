@@ -8,6 +8,7 @@ import (
 	"sync"
 )
 
+// File is an Output that appends log lines to a file.
 type File struct {
 	mu     sync.Mutex
 	f      *os.File
@@ -57,7 +58,7 @@ func NewWithBase(baseDir, appName, path string) (*File, error) {
 		return nil, err
 	}
 
-	f, err := os.OpenFile(
+	f, err := os.OpenFile( // #nosec G304 -- path is validated and constrained to baseDir
 		fullPath,
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
 		0o600,
