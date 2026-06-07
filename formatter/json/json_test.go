@@ -3,6 +3,7 @@ package json
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,7 +95,7 @@ func TestAllLevels(t *testing.T) {
 			b, err := f.Format(entry(lvl, "msg"))
 			require.NoError(t, err)
 			m := parseJSON(t, b)
-			assert.Equal(t, lvl.String(), m["level"])
+			assert.Equal(t, strings.ToLower(lvl.String()), m["level"])
 		})
 	}
 }

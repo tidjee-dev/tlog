@@ -99,6 +99,8 @@ lint: ## Run golangci-lint
 	@printf "$(DIM)→ linting...$(RESET)\n"
 	golangci-lint run ./...
 
+check: lint test ## Run lint and tests
+
 bench: ## Run benchmarks
 	go test -bench=. -benchmem -run='^$$' ./...
 
