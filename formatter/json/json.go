@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -22,7 +23,7 @@ type JSONFormatter struct {
 type Option func(*JSONFormatter)
 
 // WithTimeFormat sets the Go time layout used for the "time" field.
-// Default: time.RFC3339.
+// Default: time.RFC3339Nano.
 func WithTimeFormat(format string) Option {
 	return func(f *JSONFormatter) {
 		f.timeFormat = format
@@ -32,7 +33,7 @@ func WithTimeFormat(format string) Option {
 // New returns a JSONFormatter with the given options applied.
 func New(opts ...Option) *JSONFormatter {
 	f := &JSONFormatter{
-		timeFormat: time.RFC3339,
+		timeFormat: time.RFC3339Nano,
 	}
 	for _, opt := range opts {
 		opt(f)
@@ -54,7 +55,8 @@ func (f *JSONFormatter) Format(entry interfaces.Entry) ([]byte, error) {
 
 	// level
 	buf.WriteString(`,"level":`)
-	writeString(buf, entry.Level.String())
+	// lowercase level for JSON output
+	buf.WriteString(strconv.Quote(strings.ToLower(entry.Level.String())))
 
 	// msg
 	buf.WriteString(`,"msg":`)
@@ -108,12 +110,39 @@ func writeFieldValue(buf *bytes.Buffer, f interfaces.Field) {
 		}
 
 	case interfaces.DurationType:
-		v, _ := f.Value.(time.Duration)
-		writeString(buf, v.String())
+		v, ok := f.Value.(time.Duration)
+		if !ok {
+			writeString(buf, "<invalid-duration>")
+			return
+		}
+
+		switch {
+		case v == 0:
+			writeString(buf, "0s")
+
+		case v < time.Microsecond:
+			writeString(buf, v.Round(time.Nanosecond).String())
+
+		case v < time.Millisecond:
+			writeString(buf, v.Round(time.Microsecond).String())
+
+		case v < time.Second:
+			writeString(buf, v.Round(100*time.Microsecond).String())
+
+		case v < time.Minute:
+			writeString(buf, v.Round(time.Millisecond).String())
+
+		default:
+			writeString(buf, v.Round(time.Second).String())
+		}
 
 	case interfaces.TimeType:
-		v, _ := f.Value.(time.Time)
-		writeString(buf, v.Format(time.RFC3339))
+		v, ok := f.Value.(time.Time)
+		if !ok {
+			writeString(buf, "<invalid-time>")
+		} else {
+			writeString(buf, v.Format(time.RFC3339))
+		}
 
 	case interfaces.ErrorType:
 		err, ok := f.Value.(error)

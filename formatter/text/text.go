@@ -1,6 +1,8 @@
 package text
 
 import (
+	"encoding/json"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -100,8 +102,30 @@ func formatValue(f interfaces.Field) string {
 		v, _ := f.Value.(bool)
 		return strconv.FormatBool(v)
 	case interfaces.DurationType:
-		v, _ := f.Value.(time.Duration)
-		return v.String()
+		v, ok := f.Value.(time.Duration)
+		if !ok {
+			return "<invalid-duration>"
+		}
+
+		switch {
+		case v == 0:
+			return "0s"
+
+		case v < time.Microsecond:
+			return v.Round(time.Nanosecond).String()
+
+		case v < time.Millisecond:
+			return v.Round(time.Microsecond).String()
+
+		case v < time.Second:
+			return v.Round(100 * time.Microsecond).String()
+
+		case v < time.Minute:
+			return v.Round(time.Millisecond).String()
+
+		default:
+			return v.Round(time.Second).String()
+		}
 	case interfaces.TimeType:
 		t, _ := f.Value.(time.Time)
 		return t.Format(time.RFC3339)
@@ -115,11 +139,15 @@ func formatValue(f interfaces.Field) string {
 			return strconv.Quote(s)
 		}
 		return s
-	default:
-		// AnyType: attempt String() interface, then give up gracefully.
-		if s, ok := f.Value.(interface{ String() string }); ok {
-			return s.String()
+	case interfaces.AnyType:
+		if f.Value == nil {
+			return "<nil>"
 		}
+		if b, err := json.Marshal(f.Value); err == nil {
+			return string(b)
+		}
+		return fmt.Sprintf("%v", f.Value)
+	default:
 		return "<unsupported>"
 	}
 }

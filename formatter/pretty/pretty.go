@@ -199,8 +199,30 @@ func formatValue(f interfaces.Field) string {
 		v, _ := f.Value.(bool)
 		return strconv.FormatBool(v)
 	case interfaces.DurationType:
-		v, _ := f.Value.(time.Duration)
-		return v.String()
+		v, ok := f.Value.(time.Duration)
+		if !ok {
+			return "<invalid-duration>"
+		}
+
+		switch {
+		case v == 0:
+			return "0s"
+
+		case v < time.Microsecond:
+			return v.Round(time.Nanosecond).String()
+
+		case v < time.Millisecond:
+			return v.Round(time.Microsecond).String()
+
+		case v < time.Second:
+			return v.Round(100 * time.Microsecond).String()
+
+		case v < time.Minute:
+			return v.Round(time.Millisecond).String()
+
+		default:
+			return v.Round(time.Second).String()
+		}
 	case interfaces.TimeType:
 		t, _ := f.Value.(time.Time)
 		return t.Format(time.RFC3339)
