@@ -119,8 +119,8 @@ clean: ## Remove build artifacts
 # -----------------------
 
 prerelease: ## Ensure clean working tree
-	@git diff --quiet || (echo "Working tree is dirty" && exit 0)
-	@git diff --cached --quiet || (echo "Staged changes present" && exit 0)
+	@git diff --quiet || (echo "Working tree is dirty" && exit 1)
+	@git diff --cached --quiet || (echo "Staged changes present" && exit 1)
 
 # -----------------------
 ### 🚀 Release
@@ -136,7 +136,7 @@ version: ## Show next version (current | major | minor | patch)
 
 # Centralized tagging
 define do_tag
-	@test -n "$(1)" || (echo "Missing version" && exit 0)
+	@test -n "$(1)" || (echo "Missing version" && exit 1)
 	@printf "$(GREEN)→ releasing $(1)...$(RESET)\n"
 	@git tag -a $(1) -m "release $(1)"
 	@git push origin $(1)

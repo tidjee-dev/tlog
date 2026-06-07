@@ -214,17 +214,16 @@ func formatValue(f interfaces.Field) string {
 			return strconv.Quote(s)
 		}
 		return s
-	default:
-		if s, ok := f.Value.(interface{ String() string }); ok {
-			return s.String()
+	case interfaces.AnyType:
+		if f.Value == nil {
+			return "<nil>"
 		}
-
-		b, err := json.Marshal(f.Value)
-		if err == nil {
+		if b, err := json.Marshal(f.Value); err == nil {
 			return string(b)
 		}
-
-		return fmt.Sprintf("%+v", f.Value)
+		return fmt.Sprintf("%v", f.Value)
+	default:
+		return "<unsupported>"
 	}
 }
 

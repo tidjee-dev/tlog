@@ -2,6 +2,7 @@ package json
 
 import (
 	"bytes"
+	"encoding/json"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -122,8 +123,10 @@ func writeFieldValue(buf *bytes.Buffer, f interfaces.Field) {
 			writeString(buf, err.Error())
 		}
 
+	case interfaces.AnyType:
+		writeAnyValue(buf, f.Value)
+
 	default:
-		// AnyType and unknown: use fmt-style Sprint via manual string conversion.
 		writeString(buf, anyToString(f.Value))
 	}
 }
@@ -202,6 +205,49 @@ func anyToString(v any) string {
 		_ = val
 		return "<unsupported>"
 	}
+}
+
+func writeAnyValue(buf *bytes.Buffer, v any) {
+	if v == nil {
+		writeString(buf, "<nil>")
+		return
+	}
+
+	switch val := v.(type) {
+	case string:
+		writeString(buf, val)
+		return
+	case int:
+		buf.WriteString(strconv.Itoa(val))
+		return
+	case int64:
+		buf.WriteString(strconv.FormatInt(val, 10))
+		return
+	case float64:
+		buf.WriteString(strconv.FormatFloat(val, 'f', -1, 64))
+		return
+	case bool:
+		if val {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+		return
+	case time.Time:
+		writeString(buf, val.Format(time.RFC3339))
+		return
+	case time.Duration:
+		writeString(buf, val.String())
+		return
+	}
+	// fallback: JSON encoding for structured values
+	b, err := json.Marshal(v)
+	if err == nil {
+		buf.Write(b)
+		return
+	}
+
+	writeString(buf, anyToString(v))
 }
 
 const hexChars = "0123456789abcdef"
