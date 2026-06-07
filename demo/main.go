@@ -21,17 +21,19 @@ func main() {
 	)
 
 	textLog := tlog.New(
-    tlog.WithConsole(console.WithTTY(false)),
+		tlog.WithConsole(
+			console.WithTTY(false),
+		),
 	)
 
 	// Simulate some work
 	start := time.Now()
 	// time.Sleep(1 * time.Nanosecond)
-  elapsed := time.Since(start)
+	elapsed := time.Since(start)
 	fmt.Printf("Simulated work duration: %s\n", elapsed)
 
 	// Random duration for demonstration (0-1day)
-	ttl := time.Duration(rand.Intn(86_400_000)) * time.Millisecond
+	ttl := time.Duration(rand.Intn(86_400_000)) * time.Millisecond // #nosec G404
 	fmt.Printf("Simulated duration: %s\n", ttl)
 
 	fields := []tlog.Field{
