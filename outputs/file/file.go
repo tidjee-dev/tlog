@@ -2,6 +2,7 @@ package file
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +72,8 @@ func NewWithBase(baseDir, appName, path string) (*File, error) {
 }
 
 // Write appends data to the file in a thread-safe way.
+// It loops until all bytes are written; a short write without an error
+// is reported as io.ErrShortWrite so callers can route it to the error handler.
 func (f *File) Write(p []byte) error {
 	if f == nil {
 		return errors.New("nil file")
@@ -83,8 +86,18 @@ func (f *File) Write(p []byte) error {
 		return errors.New("write on closed file")
 	}
 
-	_, err := f.f.Write(p)
-	return err
+	total := 0
+	for total < len(p) {
+		n, err := f.f.Write(p[total:])
+		total += n
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+	}
+	return nil
 }
 
 // Close closes the file safely (idempotent).
@@ -102,8 +115,7 @@ func (f *File) Close() error {
 
 	f.closed = true
 
-	// Optional durability improvement
-	_ = f.f.Sync()
-
-	return f.f.Close()
+	syncErr := f.f.Sync()
+	closeErr := f.f.Close()
+	return errors.Join(syncErr, closeErr)
 }

@@ -40,7 +40,7 @@ import (
 
 func main() {
     log := tlog.New(
-        tlog.WithLevel(level.DEBUG),
+        tlog.WithLevel(level.Debug),
         tlog.WithConsole(), // pretty on TTY, plain text otherwise
     )
 
@@ -102,6 +102,7 @@ log := tlog.New(
 ```go
 tlog.String("key", "value")
 tlog.Int("port", 8080)
+tlog.Int64("id", 1234567890)
 tlog.Float64("ratio", 0.95)
 tlog.Bool("enabled", true)
 tlog.Duration("latency", d)
@@ -114,15 +115,19 @@ tlog.Any("meta", someStruct)
 
 ```go
 log := tlog.New(
-    tlog.WithLevel(level.INFO),           // minimum log level
+    tlog.WithLevel(level.Info),           // minimum log level
     tlog.WithConsole(),                   // enable console output
-    tlog.WithFile("app.log"),             // enable file output
+    tlog.WithFile("my-app", "app.log"),   // enable file output → ~/.logs/my-app/app.log
     tlog.WithJSON(),                      // use JSON formatter (default: text)
     tlog.WithCaller(),                    // include caller info
     tlog.WithTimestampFormat(time.RFC3339),
 )
-defer log.Close() // flush and release file handles
+defer log.Close() // Sync + close file handles (idempotent)
 ```
+
+> `WithTimestampFormat`, `WithTheme`, `WithStyles`, and `WithPretty` only
+> affect the auto-selected `text`/`pretty` formatter. They have no effect
+> when a custom formatter is set via `WithFormatter`/`WithJSON`.
 
 ## Child Loggers
 
@@ -195,6 +200,8 @@ tlog.SetDefault(tlog.New(
 ))
 
 // Use from anywhere without passing a logger around.
+// Package helpers exist for Trace, Debug, Info, Warn, Error only —
+// there are no global Fatal/Panic helpers by design (use a Logger for those).
 tlog.Info("server started", tlog.String("host", "0.0.0.0"), tlog.Int("port", 8080))
 tlog.Warn("high memory", tlog.Float64("pct", 91.2))
 tlog.Error("upstream timeout", tlog.Err(err))
@@ -281,7 +288,8 @@ tlog.WithConsole()
 ```
 
 Auto-detects TTY. Uses the `pretty` formatter (lipgloss-styled) when running in
-a terminal, and the plain-text formatter otherwise. Pass `console.WithStyles`
+a terminal, and the plain-text formatter otherwise. Writes are thread-safe and
+loop until all bytes are written. Pass `console.WithStyles`
 to choose a theme, or `console.WithTTY(false)` to force plain text.
 
 ### File
@@ -289,13 +297,17 @@ to choose a theme, or `console.WithTTY(false)` to force plain text.
 ```go
 log := tlog.New(
     tlog.WithConsole(),
-    tlog.WithFile("app.log"),
+    tlog.WithFile("my-app", "app.log"), // → ~/.logs/my-app/app.log
 )
-defer log.Close() // flush buffer and close the file
+defer log.Close() // Sync + close the file (idempotent)
 ```
 
-Opens (or creates) the file for appending. Writes are buffered; call `Close()` to
-flush and release the file handle.
+Opens (or creates) `~/.logs/<appName>/<path>` for appending (`O_APPEND`,
+`0600`, parent dirs `0700`). Absolute paths and `..` traversal are rejected.
+Writes are synchronous, thread-safe, and loop until all bytes are written
+(short writes are reported via `WithErrorHandler`). `Close()` runs `Sync`
++ `Close` and joins both errors; double-`Close` is safe. If opening fails
+during `New`, the error is routed to the error handler.
 
 ### Discard
 
@@ -307,7 +319,10 @@ Silently drops all log entries. Useful in tests and benchmarks where output is n
 
 ## Performance
 
-Benchmarks run on AMD Ryzen 5 PRO 4650G · Go 1.26.3 · `go test -bench=. -benchmem ./benchmarks/`
+Benchmarks run with `go test -bench=. -benchmem -run='^$' ./...`
+(see `Makefile: bench`). Example snapshot on AMD Ryzen 5 PRO 4650G · Go 1.26.3
+(indicative only — rerun locally; see [`benchmarks/`](benchmarks/) for the full
+suite including reference comparisons against `slog`, `zap`, and `zerolog`):
 
 | Scenario                           |  ns/op |  B/op | allocs/op |
 | ---------------------------------- | -----: | ----: | --------: |
@@ -324,7 +339,8 @@ Benchmarks run on AMD Ryzen 5 PRO 4650G · Go 1.26.3 · `go test -bench=. -bench
 | `Info` 5 fields / pretty (NoColor) |  9 460 |   392 |         8 |
 
 See [`benchmarks/`](benchmarks/) for the full suite including reference comparisons
-against `slog`, `zap`, and `zerolog`.
+against `slog`, `zap`, and `zerolog`. Numbers vary by machine/Go version —
+run `make bench` for your own results.
 
 ## Architecture
 
@@ -333,7 +349,7 @@ Logger
   ↓
 Entry  (immutable log event)
   ↓
-Formatter / Encoder  (text | json | pretty)
+Formatter  (text | json | pretty)
   ↓
 Output(s)  (console | file | discard)
   ↓
@@ -344,23 +360,28 @@ Destination
 
 ```
 tlog/
-├── core/          Logger, Config, Context
-├── level/         Level type and parser
-├── interfaces/    Entry, Field, Formatter, Output, Encoder, Style
-├── formatter/     text/, json/, pretty/
-├── outputs/       console/, file/, discard/
-├── styles/        Default, Minimal, Monochrome, NoColor, Dev, Production,
-│                  Badgy, HTTP, BadgyHTTP themes
-├── internal/      buffer, clock, syncpool, writer (unexported)
-├── pkg/ansi/      ANSI helpers (exported utility)
-├── examples/
+├── tlog.go         public facade (Logger, Options, Fields, Context)
+├── global.go       optional package-level default logger (Trace..Error)
+├── core/           Logger, Config, Context
+├── level/          Level type and parser
+├── interfaces/     Entry, Field, Formatter, Output (+ Encoder/Style placeholders)
+├── formatter/      text/, json/, pretty/
+├── outputs/        console/, file/, discard/
+├── styles/         Dev, Minimal, Monochrome, NoColor,
+│                   Production, Badgy, HTTP, BadgyHTTP themes
+├── internal/       buffer, clock, writer (unexported)
+├── pkg/ansi/       ANSI helpers (exported utility)
+├── examples/       basic, context, custom-theme, global, json-mode,
+│                   multi-output, structured, webserver
 ├── benchmarks/
-└── tests/
+└── demo/
 ```
 
 ## Error Handling
 
-`tlog` never panics internally (except on `Fatal` and `Panic` log calls).
+`tlog` never panics on the log path (except the explicit `Fatal`/`Panic` log
+calls). Configuration helpers that panic: `SetDefault(nil)` and
+`level.MustParse` on unknown input.
 
 Output errors are handled silently by default or via a custom handler:
 

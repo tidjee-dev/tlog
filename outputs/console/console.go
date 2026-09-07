@@ -70,11 +70,26 @@ func New(opts ...Option) *Console {
 
 // Write implements interfaces.Output.
 // The call is serialised with a mutex so concurrent loggers are safe.
+// It loops until all bytes are written; a short write without an error
+// is reported as io.ErrShortWrite.
 func (c *Console) Write(p []byte) error {
 	c.mu.Lock()
-	_, err := c.w.Write(p)
-	c.mu.Unlock()
-	return err
+	defer c.mu.Unlock()
+	if c.w == nil {
+		return io.ErrClosedPipe
+	}
+	total := 0
+	for total < len(p) {
+		n, err := c.w.Write(p[total:])
+		total += n
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+	}
+	return nil
 }
 
 // Close implements interfaces.Output.
