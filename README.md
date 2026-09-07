@@ -80,10 +80,14 @@ log := tlog.New(
 ```
 
 ```json
-{"time":"2026-05-31T20:14:33+02:00","level":"INFO","msg":"server started","host":"localhost","port":8080}
-{"time":"2026-05-31T20:14:34+02:00","level":"WARN","msg":"slow query","latency":"322ms"}
-{"time":"2026-05-31T20:14:35+02:00","level":"ERROR","msg":"db connection failed","error":"dial tcp: connection refused","retry":3}
+{"time":"2026-05-31T20:14:33+02:00","level":"info","msg":"server started","host":"localhost","port":8080}
+{"time":"2026-05-31T20:14:34+02:00","level":"warn","msg":"slow query","latency":"322ms"}
+{"time":"2026-05-31T20:14:35+02:00","level":"error","msg":"db connection failed","error":"dial tcp: connection refused","retry":3}
 ```
+
+> JSON output always parses: `NaN`/`±Inf` floats are emitted as quoted
+> strings, invalid UTF-8 becomes `\ufffd`, and user fields colliding with
+> `time`/`level`/`msg`/`caller` are renamed to `fields.<key>`.
 
 ## Log Levels
 
@@ -128,6 +132,16 @@ defer log.Close() // Sync + close file handles (idempotent)
 > `WithTimestampFormat`, `WithTheme`, `WithStyles`, and `WithPretty` only
 > affect the auto-selected `text`/`pretty` formatter. They have no effect
 > when a custom formatter is set via `WithFormatter`/`WithJSON`.
+>
+> - `WithCallerSkip(n)` enables caller info and skips `n` extra frames —
+>   use it when logging through your own helpers. Package helpers
+>   (`tlog.Info` etc.) attribute correctly with plain `WithCaller`.
+> - `log.Level()` returns the live minimum level and `log.Enabled(lvl)`
+>   pre-checks it — use `Enabled` to skip expensive field construction.
+>   `SetLevel` affects the logger only, not existing `With`/`WithLevel`
+>   children (they snapshotted the level at creation).
+> - `WithClock` accepts any `interfaces.Clock` (`clock.Real` by default,
+>   `clock.NewMock` for deterministic tests).
 
 ## Child Loggers
 
@@ -212,7 +226,9 @@ tlog.Error("upstream timeout", tlog.Err(err))
 ## Styling
 
 `tlog` auto-selects the pretty formatter when the console is a TTY and the
-plain-text formatter when it is not (e.g. CI, file redirect). Override with
+plain-text formatter when it is not (e.g. CI, file redirect). A non-empty
+`NO_COLOR` env var or `TERM=dumb` also selects plain text, even on a TTY;
+an explicit `WithPretty` still forces styled output. Override with
 `WithTheme`, `WithStyles`, or `WithPretty`:
 
 ```go
@@ -272,7 +288,7 @@ log := tlog.New(
 | ------------ | --------------------------------------------------- |
 | `Dev`        | High contrast, verbose dev mode (default)           |
 | `Minimal`    | Clean, low visual noise                             |
-| `Monochrome` | Bold/italic only, no color                          |
+| `Monochrome` | Bold/italic only, no color (still ANSI)      |
 | `NoColor`    | No ANSI codes — CI / file output                    |
 | `Production` | Subdued, ops-oriented                               |
 | `Badgy`      | Badge-style level pills with background color       |
@@ -311,7 +327,15 @@ Writes are synchronous, thread-safe, and loop until all bytes are written
 storage; `Close()` runs `Sync` + `Close` and joins both errors; double-`Close`
 is safe. If opening fails during `New`, the error is routed to the error handler.
 
-### Lifecycle (`Close` / `Fatal`)
+### Discard
+
+```go
+tlog.WithDiscard()
+```
+
+Silently drops all log entries. Useful in tests and benchmarks where output is not needed.
+
+## Lifecycle (`Close` / `Fatal`)
 
 `Close()` is idempotent per `Logger` (repeat calls are no-ops). `With`/`WithLevel`
 children share the parent's outputs, so close only once — typically the parent
@@ -323,14 +347,6 @@ or the explicitly owned logger — to avoid double-`Close` on custom outputs
 and calls `os.Exit(1)`. Deferred funcs — including `Close` — do not run after
 `os.Exit`, so the `Sync` step is what preserves the last line for buffered
 outputs. `Panic` logs then panics, so deferred `Close` still runs.
-
-### Discard
-
-```go
-tlog.WithDiscard()
-```
-
-Silently drops all log entries. Useful in tests and benchmarks where output is not needed.
 
 ## Performance
 
@@ -379,7 +395,8 @@ tlog/
 ├── global.go       optional package-level default logger (Trace..Error)
 ├── core/           Logger, Config, Context
 ├── level/          Level type and parser
-├── interfaces/     Entry, Field, Formatter, Output (+ Encoder/Style placeholders)
+├── interfaces/     Entry, Field, Formatter, Output, Clock
+│                   (+ Encoder/Style placeholders)
 ├── formatter/      text/, json/, pretty/
 ├── outputs/        console/, file/, discard/
 ├── styles/         Dev, Minimal, Monochrome, NoColor,

@@ -15,7 +15,6 @@ import (
 	"github.com/tidjee-dev/tlog/core"
 	jsonfmt "github.com/tidjee-dev/tlog/formatter/json"
 	"github.com/tidjee-dev/tlog/interfaces"
-	"github.com/tidjee-dev/tlog/internal/clock"
 	"github.com/tidjee-dev/tlog/level"
 	"github.com/tidjee-dev/tlog/outputs/console"
 	"github.com/tidjee-dev/tlog/styles"
@@ -60,6 +59,10 @@ func WithErrorHandler(fn func(error)) Option { return core.WithErrorHandler(fn) 
 // WithCaller enables caller info (file, line, function) in log entries.
 func WithCaller() Option { return core.WithCaller() }
 
+// WithCallerSkip enables caller info and skips extra frames beyond the
+// logger internals (e.g. your own helper wrappers).
+func WithCallerSkip(skip int) Option { return core.WithCallerSkip(skip) }
+
 // WithTimestampFormat sets the time layout used by the default text formatter.
 func WithTimestampFormat(format string) Option { return core.WithTimestampFormat(format) }
 
@@ -82,7 +85,8 @@ func WithDiscard() Option { return core.WithDiscard() }
 
 // WithClock sets the time source used for entry timestamps.
 // Useful in tests to inject a fixed or controllable clock.
-func WithClock(clk clock.Clock) Option { return core.WithClock(clk) }
+// Accepts any interfaces.Clock; clock.Real and *clock.Mock both qualify.
+func WithClock(clk interfaces.Clock) Option { return core.WithClock(clk) }
 
 // WithTheme sets the complete Styles theme used by the auto-selected pretty
 // formatter. Overrides any styles set via console.WithStyles.

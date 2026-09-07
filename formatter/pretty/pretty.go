@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tidjee-dev/tlog/interfaces"
@@ -26,7 +27,8 @@ type PrettyFormatter struct {
 	isTTY           bool
 }
 
-// padLevel left-pads s to exactly 5 characters without allocation.
+// padLevel right-pads s with spaces to 5 characters (allocates for short
+// levels such as INFO/WARN; TRACE/DEBUG/ERROR/FATAL/PANIC already fill it).
 func padLevel(s string) string {
 	const spaces = "     "
 	if len(s) >= 5 {
@@ -63,6 +65,9 @@ func WithTTY(tty bool) Option {
 // New returns a PrettyFormatter. By default it uses the Dev theme,
 // the standard timestamp format, and assumes a TTY.
 // Pass WithTTY(false) to get plain-text output from this formatter.
+// Note: when built via tlog.New auto-selection, a non-empty NO_COLOR or
+// TERM=dumb downgrades TTY detection to plain text; an explicit
+// tlog.WithPretty still forces styled output.
 func New(opts ...Option) *PrettyFormatter {
 	f := &PrettyFormatter{
 		styles:          styles.Dev(),
@@ -101,7 +106,7 @@ func (f *PrettyFormatter) formatStyled(entry interfaces.Entry) ([]byte, error) {
 	buf.WriteByte(' ')
 
 	// Message
-	buf.WriteString(s.Message.Render(entry.Message))
+	buf.WriteString(s.Message.Render(formatMessage(entry.Message)))
 
 	// Fields: key=value
 	for _, field := range entry.Fields {
@@ -133,7 +138,7 @@ func (f *PrettyFormatter) formatPlain(entry interfaces.Entry) ([]byte, error) {
 	buf.WriteByte(' ')
 	buf.WriteString(padLevel(entry.Level.String()))
 	buf.WriteByte(' ')
-	buf.WriteString(entry.Message)
+	buf.WriteString(formatMessage(entry.Message))
 
 	for _, field := range entry.Fields {
 		buf.WriteString("  ")
@@ -177,6 +182,15 @@ func (f *PrettyFormatter) levelStyle(l level.Level) interface{ Render(...string)
 	}
 }
 
+// formatMessage renders the message so one entry stays on one line:
+// messages containing \n or \r are double-quoted with escapes.
+func formatMessage(msg string) string {
+	if strings.ContainsAny(msg, "\r\n") {
+		return strconv.Quote(msg)
+	}
+	return msg
+}
+
 // formatValue renders a Field's value as a plain string.
 func formatValue(f interfaces.Field) string {
 	switch f.Type {
@@ -204,27 +218,35 @@ func formatValue(f interfaces.Field) string {
 			return "<invalid-duration>"
 		}
 
+		// Compare on magnitude so negative durations round like positives.
+		mag := v
+		if mag < 0 {
+			mag = -mag
+		}
 		switch {
 		case v == 0:
 			return "0s"
 
-		case v < time.Microsecond:
+		case mag < time.Microsecond:
 			return v.Round(time.Nanosecond).String()
 
-		case v < time.Millisecond:
+		case mag < time.Millisecond:
 			return v.Round(time.Microsecond).String()
 
-		case v < time.Second:
+		case mag < time.Second:
 			return v.Round(100 * time.Microsecond).String()
 
-		case v < time.Minute:
+		case mag < time.Minute:
 			return v.Round(time.Millisecond).String()
 
 		default:
 			return v.Round(time.Second).String()
 		}
 	case interfaces.TimeType:
-		t, _ := f.Value.(time.Time)
+		t, ok := f.Value.(time.Time)
+		if !ok {
+			return "<invalid-time>"
+		}
 		return t.Format(time.RFC3339)
 	case interfaces.ErrorType:
 		err, ok := f.Value.(error)
@@ -255,7 +277,7 @@ func needsQuoting(s string) bool {
 		return true
 	}
 	for _, c := range s {
-		if c == ' ' || c == '"' || c == '\\' || c == '=' || c == '\n' || c == '\t' {
+		if c == ' ' || c == '"' || c == '\\' || c == '=' || c == '\n' || c == '\r' || c == '\t' {
 			return true
 		}
 	}

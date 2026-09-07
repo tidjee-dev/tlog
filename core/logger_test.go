@@ -57,6 +57,27 @@ type errOutput struct{ err error }
 func (e *errOutput) Write([]byte) error { return e.err }
 func (e *errOutput) Close() error       { return nil }
 
+// countingOutput records Close calls to prove Logger.Close is idempotent.
+type countingOutput struct {
+	mu         sync.Mutex
+	closeCalls int
+}
+
+func (c *countingOutput) Write([]byte) error { return nil }
+
+func (c *countingOutput) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closeCalls++
+	return nil
+}
+
+func (c *countingOutput) calls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closeCalls
+}
+
 // newTestLogger returns a Logger writing to out using the text formatter.
 func newTestLogger(out interfaces.Output, opts ...Option) *Logger {
 	opts = append([]Option{WithOutput(out), WithFormatter(text.New())}, opts...)
@@ -82,6 +103,7 @@ func TestNewWithConsoleAutoFormatter(t *testing.T) {
 
 // Auto-select pretty when console is TTY.
 func TestAutoFormatterPrettyWhenTTY(t *testing.T) {
+	pinColorEnv(t)
 	con := console.New(
 		console.WithWriter(&bytes.Buffer{}),
 		console.WithTTY(true),
@@ -102,6 +124,7 @@ func TestAutoFormatterTextWhenNotTTY(t *testing.T) {
 
 // Custom styles are forwarded to the pretty formatter.
 func TestAutoFormatterForwardStyles(t *testing.T) {
+	pinColorEnv(t)
 	con := console.New(
 		console.WithWriter(&bytes.Buffer{}),
 		console.WithTTY(true),
@@ -155,6 +178,7 @@ func TestWithStylesModifierApplied(t *testing.T) {
 
 // WithTheme overrides console.WithStyles.
 func TestWithThemeOverridesConsoleStyles(t *testing.T) {
+	pinColorEnv(t)
 	// Both console.WithStyles and WithTheme set — WithTheme wins.
 	con := console.New(
 		console.WithWriter(&bytes.Buffer{}),
@@ -167,6 +191,36 @@ func TestWithThemeOverridesConsoleStyles(t *testing.T) {
 	assert.Equal(t, styles.Dev(), *l.cfg.prettyTheme)
 	_, ok := l.cfg.Formatter.(*pretty.PrettyFormatter)
 	assert.True(t, ok)
+}
+
+// pinColorEnv pins colour-related env so TTY auto-select tests are hermetic
+// regardless of the outer environment (NO_COLOR / TERM=dumb would otherwise
+// downgrade pretty auto-detection to plain text by design).
+func pinColorEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("TERM", "xterm")
+}
+
+// A non-empty NO_COLOR (or TERM=dumb) downgrades TTY auto-detection to
+// plain text; an explicit WithPretty still forces styled output.
+func TestAutoFormatterTextWhenNoColor(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	con := console.New(
+		console.WithWriter(&bytes.Buffer{}),
+		console.WithTTY(true),
+	)
+	l := New(WithOutput(con))
+	_, ok := l.cfg.Formatter.(*text.TextFormatter)
+	assert.True(t, ok, "expected text formatter when NO_COLOR is set")
+}
+
+func TestWithPrettyOverridesNoColor(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var out testOutput
+	l := New(WithOutput(&out), WithPretty())
+	_, ok := l.cfg.Formatter.(*pretty.PrettyFormatter)
+	assert.True(t, ok, "expected WithPretty to win over NO_COLOR")
 }
 
 // --------------------------------------------------------------------------
@@ -541,6 +595,18 @@ func TestCloseErrorRoutedToHandler(t *testing.T) {
 
 	l.Close()
 	assert.Equal(t, closeErr, handledErr)
+}
+
+func TestCloseIsIdempotentPerLogger(t *testing.T) {
+	out := &countingOutput{}
+	l := New(
+		WithOutput(out),
+		WithFormatter(text.New()),
+	)
+
+	l.Close()
+	l.Close()
+	assert.Equal(t, 1, out.calls(), "repeat Close must not re-close outputs")
 }
 
 // --------------------------------------------------------------------------

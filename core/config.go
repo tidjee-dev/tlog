@@ -3,7 +3,6 @@ package core
 import (
 	"github.com/tidjee-dev/tlog/formatter/json"
 	"github.com/tidjee-dev/tlog/interfaces"
-	"github.com/tidjee-dev/tlog/internal/clock"
 	"github.com/tidjee-dev/tlog/level"
 	"github.com/tidjee-dev/tlog/outputs/console"
 	"github.com/tidjee-dev/tlog/outputs/discard"
@@ -15,11 +14,12 @@ import (
 type Config struct {
 	AppName         string
 	Level           level.Level
-	Clock           clock.Clock
+	Clock           interfaces.Clock
 	Outputs         []interfaces.Output
 	Formatter       interfaces.Formatter
 	ErrorHandler    func(error)
 	CallerEnabled   bool
+	CallerSkip      int
 	TimestampFormat string
 	Fields          []interfaces.Field
 	filePaths       []string             // deferred file opens; processed by core.New
@@ -41,8 +41,12 @@ func WithLevel(l level.Level) Option {
 // WithClock sets the time source used for entry timestamps.
 // The default is clock.Real{} which calls time.Now().
 // Use clock.NewMock to control time deterministically in tests.
-func WithClock(clk clock.Clock) Option {
+// Accepts any interfaces.Clock; clock.Real and *clock.Mock both qualify.
+func WithClock(clk interfaces.Clock) Option {
 	return func(c *Config) {
+		if clk == nil {
+			return
+		}
 		c.Clock = clk
 	}
 }
@@ -89,6 +93,20 @@ func WithErrorHandler(fn func(error)) Option {
 func WithCaller() Option {
 	return func(c *Config) {
 		c.CallerEnabled = true
+	}
+}
+
+// WithCallerSkip enables caller info and skips extra frames beyond the
+// logger internals. Use it when logging through your own helper wrappers:
+// WithCallerSkip(1) attributes the call to your helper's caller.
+// Package-level helpers (tlog.Info etc.) need no skip; internal frames
+// are detected automatically.
+func WithCallerSkip(skip int) Option {
+	return func(c *Config) {
+		c.CallerEnabled = true
+		if skip > 0 {
+			c.CallerSkip = skip
+		}
 	}
 }
 

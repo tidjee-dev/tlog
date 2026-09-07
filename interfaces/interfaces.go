@@ -1,5 +1,14 @@
 package interfaces
 
+import "time"
+
+// Clock is a time provider for entry timestamps.
+// Production code uses a wall clock; tests inject a mock.
+// clock.Real and *clock.Mock both satisfy this interface.
+type Clock interface {
+	Now() time.Time
+}
+
 // Formatter converts a log Entry into bytes for output.
 // Implementations must be safe for concurrent use; Format is called
 // inline on each caller's goroutine.

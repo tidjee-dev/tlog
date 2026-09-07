@@ -3,6 +3,7 @@ package json
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -43,6 +44,9 @@ func New(opts ...Option) *JSONFormatter {
 
 // Format implements interfaces.Formatter.
 // Produces a newline-terminated JSON line.
+// User fields colliding with reserved keys ("time", "level", "msg", "caller")
+// are renamed to "fields.<key>" so the output never contains duplicate keys
+// and always parses.
 func (f *JSONFormatter) Format(entry interfaces.Entry) ([]byte, error) {
 	buf := buffer.Get()
 	defer buffer.Put(buf)
@@ -65,9 +69,9 @@ func (f *JSONFormatter) Format(entry interfaces.Entry) ([]byte, error) {
 	// user fields
 	for _, field := range entry.Fields {
 		buf.WriteByte(',')
-		writeString(buf, field.Key)
+		writeString(buf, jsonFieldKey(field.Key))
 		buf.WriteByte(':')
-		writeFieldValue(buf, field)
+		writeFieldValue(buf, field, f.timeFormat)
 	}
 
 	// caller (optional)
@@ -82,8 +86,18 @@ func (f *JSONFormatter) Format(entry interfaces.Entry) ([]byte, error) {
 	return out, nil
 }
 
+// jsonFieldKey renames user keys that would duplicate reserved top-level keys.
+func jsonFieldKey(key string) string {
+	switch key {
+	case "time", "level", "msg", "caller":
+		return "fields." + key
+	default:
+		return key
+	}
+}
+
 // writeFieldValue encodes a Field's value into buf without reflection.
-func writeFieldValue(buf *bytes.Buffer, f interfaces.Field) {
+func writeFieldValue(buf *bytes.Buffer, f interfaces.Field, timeFormat string) {
 	switch f.Type {
 	case interfaces.StringType:
 		s, _ := f.Value.(string)
@@ -99,7 +113,7 @@ func writeFieldValue(buf *bytes.Buffer, f interfaces.Field) {
 
 	case interfaces.Float64Type:
 		v, _ := f.Value.(float64)
-		buf.WriteString(strconv.FormatFloat(v, 'f', -1, 64))
+		writeJSONFloat(buf, v)
 
 	case interfaces.BoolType:
 		v, _ := f.Value.(bool)
@@ -116,20 +130,25 @@ func writeFieldValue(buf *bytes.Buffer, f interfaces.Field) {
 			return
 		}
 
+		// Compare on magnitude so negative durations round like positives.
+		mag := v
+		if mag < 0 {
+			mag = -mag
+		}
 		switch {
 		case v == 0:
 			writeString(buf, "0s")
 
-		case v < time.Microsecond:
+		case mag < time.Microsecond:
 			writeString(buf, v.Round(time.Nanosecond).String())
 
-		case v < time.Millisecond:
+		case mag < time.Millisecond:
 			writeString(buf, v.Round(time.Microsecond).String())
 
-		case v < time.Second:
+		case mag < time.Second:
 			writeString(buf, v.Round(100*time.Microsecond).String())
 
-		case v < time.Minute:
+		case mag < time.Minute:
 			writeString(buf, v.Round(time.Millisecond).String())
 
 		default:
@@ -141,7 +160,7 @@ func writeFieldValue(buf *bytes.Buffer, f interfaces.Field) {
 		if !ok {
 			writeString(buf, "<invalid-time>")
 		} else {
-			writeString(buf, v.Format(time.RFC3339))
+			writeString(buf, v.Format(timeFormat))
 		}
 
 	case interfaces.ErrorType:
@@ -153,10 +172,26 @@ func writeFieldValue(buf *bytes.Buffer, f interfaces.Field) {
 		}
 
 	case interfaces.AnyType:
-		writeAnyValue(buf, f.Value)
+		writeAnyValue(buf, f.Value, timeFormat)
 
 	default:
 		writeString(buf, anyToString(f.Value))
+	}
+}
+
+// writeJSONFloat encodes v as a JSON number. NaN and infinities are not
+// valid JSON, so they are emitted as quoted strings to keep the output
+// parseable (json.Unmarshal accepts them as strings, not numbers).
+func writeJSONFloat(buf *bytes.Buffer, v float64) {
+	switch {
+	case math.IsNaN(v):
+		writeString(buf, "NaN")
+	case math.IsInf(v, 1):
+		writeString(buf, "+Inf")
+	case math.IsInf(v, -1):
+		writeString(buf, "-Inf")
+	default:
+		buf.WriteString(strconv.FormatFloat(v, 'f', -1, 64))
 	}
 }
 
@@ -196,8 +231,18 @@ func writeString(buf *bytes.Buffer, s string) {
 			start = i
 			continue
 		}
-		// Multi-byte rune — pass through as-is (valid UTF-8).
-		_, size := utf8.DecodeRuneInString(s[i:])
+		// Multi-byte rune — pass through as-is when valid UTF-8,
+		// otherwise emit the replacement character (encoding/json parity).
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			if start < i {
+				buf.WriteString(s[start:i])
+			}
+			buf.WriteString(`\ufffd`)
+			i++
+			start = i
+			continue
+		}
 		i += size
 	}
 	if start < len(s) {
@@ -206,18 +251,15 @@ func writeString(buf *bytes.Buffer, s string) {
 	buf.WriteByte('"')
 }
 
-// anyToString converts an arbitrary value to a string without reflection
-// by using the fmt.Stringer interface when available, otherwise falling back
-// to a format string via fmt.Sprint. Import-free for non-Stringer values
-// would require reflect; we accept one fmt.Sprint call only in the AnyType path.
+// anyToString converts an arbitrary value to a string for the fallback path
+// (unknown field types, or values encoding/json cannot marshal).
+// The result is always JSON-quoted by the caller, so it never affects output
+// validity. Stringer is preferred; basic scalars use strconv; anything else
+// is "<unsupported>".
 func anyToString(v any) string {
 	if s, ok := v.(interface{ String() string }); ok {
 		return s.String()
 	}
-	buf := make([]byte, 0, 32)
-	buf = strconv.AppendQuote(buf, "") // prime the encoder
-	_ = buf
-	// Use a simple sprint via strconv for basic scalars; others get %v.
 	switch val := v.(type) {
 	case string:
 		return val
@@ -230,13 +272,12 @@ func anyToString(v any) string {
 	case bool:
 		return strconv.FormatBool(val)
 	default:
-		// Truly unknown type — accept the fmt import only here.
 		_ = val
 		return "<unsupported>"
 	}
 }
 
-func writeAnyValue(buf *bytes.Buffer, v any) {
+func writeAnyValue(buf *bytes.Buffer, v any, timeFormat string) {
 	if v == nil {
 		writeString(buf, "<nil>")
 		return
@@ -253,7 +294,7 @@ func writeAnyValue(buf *bytes.Buffer, v any) {
 		buf.WriteString(strconv.FormatInt(val, 10))
 		return
 	case float64:
-		buf.WriteString(strconv.FormatFloat(val, 'f', -1, 64))
+		writeJSONFloat(buf, val)
 		return
 	case bool:
 		if val {
@@ -263,7 +304,7 @@ func writeAnyValue(buf *bytes.Buffer, v any) {
 		}
 		return
 	case time.Time:
-		writeString(buf, val.Format(time.RFC3339))
+		writeString(buf, val.Format(timeFormat))
 		return
 	case time.Duration:
 		writeString(buf, val.String())

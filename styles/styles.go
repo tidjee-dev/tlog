@@ -63,6 +63,8 @@ func Minimal() Styles {
 }
 
 // Monochrome uses no color; bold and italic distinguish log regions.
+// Note: bold/italic are still ANSI escape codes — use NoColor for
+// output that must contain no escapes at all.
 func Monochrome() Styles {
 	return Styles{
 		Timestamp:  lipgloss.NewStyle(),

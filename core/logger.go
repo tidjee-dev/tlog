@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -24,6 +25,14 @@ type Logger struct {
 	atomicLevel atomic.Uint32
 	closeOnce   sync.Once
 }
+
+// Compile-time checks: built-in clocks satisfy the public interfaces.Clock,
+// so existing WithClock(clock.Real{}) / WithClock(clock.NewMock(t)) callers
+// keep compiling after the parameter was widened from clock.Clock.
+var (
+	_ interfaces.Clock = clock.Real{}
+	_ interfaces.Clock = (*clock.Mock)(nil)
+)
 
 // New returns a configured Logger with the given options applied.
 // Defaults: level=Trace (all entries pass), errors silently discarded.
@@ -50,14 +59,19 @@ func New(opts ...Option) *Logger {
 		cfg.Outputs = append(cfg.Outputs, f)
 	}
 	// Auto-select formatter when outputs exist but none was explicitly configured.
-	// Priority for pretty: forcePretty flag > TTY console detection.
+	// Priority for pretty: forcePretty flag > TTY console detection, unless
+	// colour is suppressed by the environment (non-empty NO_COLOR or
+	// TERM=dumb), which downgrades TTY auto-detection to plain text.
+	// An explicit WithPretty still forces styled output.
 	// Priority for theme:  WithTheme > console.WithStyles > styles.Default().
 	if cfg.Formatter == nil && len(cfg.Outputs) > 0 {
 		var ttyConsole *console.Console
-		for _, o := range cfg.Outputs {
-			if con, ok := o.(*console.Console); ok && con.TTY() {
-				ttyConsole = con
-				break
+		if !colorSuppressed() {
+			for _, o := range cfg.Outputs {
+				if con, ok := o.(*console.Console); ok && con.TTY() {
+					ttyConsole = con
+					break
+				}
 			}
 		}
 
@@ -107,8 +121,22 @@ func New(opts ...Option) *Logger {
 
 // SetLevel changes the minimum log level for this Logger.
 // The change is visible to all concurrent callers immediately.
+// It does not propagate to existing With/WithLevel children (they snapshotted
+// the level at creation); read the live value with Level().
 func (l *Logger) SetLevel(lvl level.Level) {
 	l.atomicLevel.Store(uint32(lvl))
+}
+
+// Level returns the live minimum log level (the atomic value, not the
+// initial Config). Entries below it are dropped.
+func (l *Logger) Level() level.Level {
+	return level.Level(l.atomicLevel.Load())
+}
+
+// Enabled reports whether an entry at lvl would be logged.
+// Use it to skip expensive field construction.
+func (l *Logger) Enabled(lvl level.Level) bool {
+	return lvl >= l.Level()
 }
 
 // With returns a new child Logger that inherits all settings from the parent
@@ -234,9 +262,7 @@ func (l *Logger) log(lvl level.Level, msg string, fields ...interfaces.Field) {
 	}
 
 	if l.cfg.CallerEnabled {
-		// Skip frames: runtime.Callers(0), capturedCaller(1), log(2), <level method>(3)
-		// → frame 4 is the user call site.
-		entry.Caller = capturedCaller(4)
+		entry.Caller = capturedCaller(l.cfg.CallerSkip)
 	}
 
 	b, err := l.cfg.Formatter.Format(entry)
@@ -252,16 +278,75 @@ func (l *Logger) log(lvl level.Level, msg string, fields ...interfaces.Field) {
 	}
 }
 
-// capturedCaller returns call-site info by skipping skip frames on the stack.
-func capturedCaller(skip int) interfaces.Caller {
-	var pcs [1]uintptr
-	if runtime.Callers(skip, pcs[:]) < 1 {
+// colorSuppressed reports whether the environment asks for no colour:
+// a non-empty NO_COLOR (https://no-color.org) or TERM=dumb.
+func colorSuppressed() bool {
+	if v, ok := os.LookupEnv("NO_COLOR"); ok && v != "" {
+		return true
+	}
+	return os.Getenv("TERM") == "dumb"
+}
+
+// capturedCaller returns the first non-tlog call-site frame, skipping
+// extraSkip additional user frames (e.g. helper wrappers configured via
+// WithCallerSkip). Only the known logger-internal frames are skipped
+// (log dispatch, level methods, package helpers), so package-level helpers
+// and white-box tests inside the module still attribute correctly.
+func capturedCaller(extraSkip int) interfaces.Caller {
+	const maxFrames = 16
+	var pcs [maxFrames]uintptr
+	// Skip runtime.Callers + capturedCaller itself; the rest is filtered below.
+	n := runtime.Callers(2, pcs[:])
+	if n == 0 {
 		return interfaces.Caller{}
 	}
-	frame, _ := runtime.CallersFrames(pcs[:]).Next()
-	return interfaces.Caller{
-		File:     frame.File,
-		Line:     frame.Line,
-		Function: frame.Function,
+	frames := runtime.CallersFrames(pcs[:n])
+	skipped := 0
+	for {
+		frame, more := frames.Next()
+		if isInternalCaller(frame.Function) {
+			if !more {
+				return interfaces.Caller{}
+			}
+			continue
+		}
+		if skipped < extraSkip {
+			skipped++
+			if !more {
+				return interfaces.Caller{}
+			}
+			continue
+		}
+		return interfaces.Caller{
+			File:     frame.File,
+			Line:     frame.Line,
+			Function: frame.Function,
+		}
 	}
+}
+
+// isInternalCaller reports whether fn is a tlog log-path frame that must be
+// skipped during caller attribution. It matches exact internal symbols only,
+// not the whole module, so user code and tests living in the module (e.g.
+// package core tests) are still reported as call sites.
+func isInternalCaller(fn string) bool {
+	if fn == "github.com/tidjee-dev/tlog/core.capturedCaller" ||
+		fn == "github.com/tidjee-dev/tlog/core.isInternalCaller" ||
+		fn == "github.com/tidjee-dev/tlog/core.(*Logger).log" {
+		return true
+	}
+	if strings.HasPrefix(fn, "github.com/tidjee-dev/tlog/core.(*Logger).") {
+		// Trace/Debug/Info/Warn/Error/Fatal/Panic + Close/With helpers.
+		return true
+	}
+	switch fn {
+	case "github.com/tidjee-dev/tlog.Trace",
+		"github.com/tidjee-dev/tlog.Debug",
+		"github.com/tidjee-dev/tlog.Info",
+		"github.com/tidjee-dev/tlog.Warn",
+		"github.com/tidjee-dev/tlog.Error",
+		"github.com/tidjee-dev/tlog.Default":
+		return true
+	}
+	return false
 }

@@ -79,16 +79,29 @@ func TestConcurrentWrites(t *testing.T) {
 	const msg = "log line\n"
 
 	var wg sync.WaitGroup
+	errs := make(chan error, goroutines)
 	wg.Add(goroutines)
 	for range goroutines {
 		go func() {
 			defer wg.Done()
-			require.NoError(t, c.Write([]byte(msg)))
+			// require.* must only run in the test goroutine;
+			// report via channel and assert after Wait.
+			errs <- c.Write([]byte(msg))
 		}()
 	}
 	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		assert.NoError(t, err)
+	}
 
 	assert.Equal(t, goroutines*len(msg), buf.Len())
+}
+
+func TestWriteNilWriterReturnsError(t *testing.T) {
+	c := New(WithWriter(nil))
+	assert.Error(t, c.Write([]byte("hello\n")), "nil writer must error, not panic")
 }
 
 // safeBuffer wraps bytes.Buffer with a mutex so the test itself is race-free

@@ -20,8 +20,16 @@ func Strip(s string) string {
 }
 
 // HasColor reports whether w appears to support ANSI colour output.
-// Returns true when w is an *os.File backed by a terminal (or Cygwin PTY).
+// Returns true when w is an *os.File backed by a terminal (or Cygwin PTY),
+// unless colour is suppressed by the environment: a non-empty NO_COLOR
+// (https://no-color.org) or TERM=dumb forces false.
 func HasColor(w io.Writer) bool {
+	if noColor, ok := os.LookupEnv("NO_COLOR"); ok && noColor != "" {
+		return false
+	}
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
 	f, ok := w.(*os.File)
 	if !ok {
 		return false

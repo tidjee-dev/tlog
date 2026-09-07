@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tidjee-dev/tlog/interfaces"
@@ -16,8 +17,8 @@ type TextFormatter struct {
 	timestampFormat string
 }
 
-// padLevel left-pads s to exactly 5 characters without allocation.
-// All built-in level strings are ≤ 5 chars, so this is a pure string concat.
+// padLevel right-pads s with spaces to 5 characters (allocates for short
+// levels such as INFO/WARN; TRACE/DEBUG/ERROR/FATAL/PANIC already fill it).
 func padLevel(s string) string {
 	const spaces = "     "
 	if len(s) >= 5 {
@@ -58,7 +59,7 @@ func (tf *TextFormatter) Format(entry interfaces.Entry) ([]byte, error) {
 	buf.WriteByte(' ')
 	buf.WriteString(padLevel(entry.Level.String()))
 	buf.WriteByte(' ')
-	buf.WriteString(entry.Message)
+	buf.WriteString(formatMessage(entry.Message))
 
 	for _, f := range entry.Fields {
 		buf.WriteString("  ")
@@ -78,6 +79,15 @@ func (tf *TextFormatter) Format(entry interfaces.Entry) ([]byte, error) {
 	out := make([]byte, buf.Len())
 	copy(out, buf.Bytes())
 	return out, nil
+}
+
+// formatMessage renders the message so one entry stays on one line:
+// messages containing \n or \r are double-quoted with escapes.
+func formatMessage(msg string) string {
+	if strings.ContainsAny(msg, "\r\n") {
+		return strconv.Quote(msg)
+	}
+	return msg
 }
 
 // formatValue renders a Field's value as a string, quoting when necessary.
@@ -107,27 +117,35 @@ func formatValue(f interfaces.Field) string {
 			return "<invalid-duration>"
 		}
 
+		// Compare on magnitude so negative durations round like positives.
+		mag := v
+		if mag < 0 {
+			mag = -mag
+		}
 		switch {
 		case v == 0:
 			return "0s"
 
-		case v < time.Microsecond:
+		case mag < time.Microsecond:
 			return v.Round(time.Nanosecond).String()
 
-		case v < time.Millisecond:
+		case mag < time.Millisecond:
 			return v.Round(time.Microsecond).String()
 
-		case v < time.Second:
+		case mag < time.Second:
 			return v.Round(100 * time.Microsecond).String()
 
-		case v < time.Minute:
+		case mag < time.Minute:
 			return v.Round(time.Millisecond).String()
 
 		default:
 			return v.Round(time.Second).String()
 		}
 	case interfaces.TimeType:
-		t, _ := f.Value.(time.Time)
+		t, ok := f.Value.(time.Time)
+		if !ok {
+			return "<invalid-time>"
+		}
 		return t.Format(time.RFC3339)
 	case interfaces.ErrorType:
 		err, ok := f.Value.(error)
@@ -158,7 +176,7 @@ func needsQuoting(s string) bool {
 		return true
 	}
 	for _, c := range s {
-		if c == ' ' || c == '"' || c == '\\' || c == '=' || c == '\n' || c == '\t' {
+		if c == ' ' || c == '"' || c == '\\' || c == '=' || c == '\n' || c == '\r' || c == '\t' {
 			return true
 		}
 	}

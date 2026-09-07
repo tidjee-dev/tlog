@@ -90,6 +90,7 @@ func TestConcurrentWrites(t *testing.T) {
 	const msg = "log line\n"
 
 	var wg sync.WaitGroup
+	errs := make(chan error, goroutines)
 
 	wg.Add(goroutines)
 
@@ -97,11 +98,18 @@ func TestConcurrentWrites(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			require.NoError(t, f.Write([]byte(msg)))
+			// require.* must only run in the test goroutine;
+			// report via channel and assert after Wait.
+			errs <- f.Write([]byte(msg))
 		}()
 	}
 
 	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		assert.NoError(t, err)
+	}
 
 	require.NoError(t, f.Close())
 
@@ -109,4 +117,42 @@ func TestConcurrentWrites(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, goroutines*len(msg), len(got))
+}
+
+func TestDoubleCloseReturnsNil(t *testing.T) {
+	base := t.TempDir()
+
+	f, err := NewWithBase(base, "tlog-demo", "test-double-close.log")
+	require.NoError(t, err)
+
+	require.NoError(t, f.Close())
+	assert.NoError(t, f.Close(), "second Close must be a no-op")
+}
+
+func TestWriteAfterCloseFails(t *testing.T) {
+	base := t.TempDir()
+
+	f, err := NewWithBase(base, "tlog-demo", "test-write-after-close.log")
+	require.NoError(t, err)
+
+	require.NoError(t, f.Close())
+	assert.Error(t, f.Write([]byte("too late\n")))
+}
+
+func TestSyncFlushesWithoutClose(t *testing.T) {
+	base := t.TempDir()
+	appName := "tlog-demo"
+	path := "test-sync.log"
+
+	f, err := NewWithBase(base, appName, path)
+	require.NoError(t, err)
+
+	require.NoError(t, f.Write([]byte("synced\n")))
+	require.NoError(t, f.Sync())
+	require.NoError(t, f.Close())
+
+	got, err := os.ReadFile(testPath(base, appName, path))
+	require.NoError(t, err)
+
+	assert.Equal(t, "synced\n", string(got))
 }
