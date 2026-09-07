@@ -291,6 +291,8 @@ Auto-detects TTY. Uses the `pretty` formatter (lipgloss-styled) when running in
 a terminal, and the plain-text formatter otherwise. Writes are thread-safe and
 loop until all bytes are written. Pass `console.WithStyles`
 to choose a theme, or `console.WithTTY(false)` to force plain text.
+Read the cached state via `(*console.Console).TTY()` — do not mutate `IsTTY`
+after the console is shared.
 
 ### File
 
@@ -305,9 +307,22 @@ defer log.Close() // Sync + close the file (idempotent)
 Opens (or creates) `~/.logs/<appName>/<path>` for appending (`O_APPEND`,
 `0600`, parent dirs `0700`). Absolute paths and `..` traversal are rejected.
 Writes are synchronous, thread-safe, and loop until all bytes are written
-(short writes are reported via `WithErrorHandler`). `Close()` runs `Sync`
-+ `Close` and joins both errors; double-`Close` is safe. If opening fails
-during `New`, the error is routed to the error handler.
+(short writes are reported via `WithErrorHandler`). `Sync()` flushes to stable
+storage; `Close()` runs `Sync` + `Close` and joins both errors; double-`Close`
+is safe. If opening fails during `New`, the error is routed to the error handler.
+
+### Lifecycle (`Close` / `Fatal`)
+
+`Close()` is idempotent per `Logger` (repeat calls are no-ops). `With`/`WithLevel`
+children share the parent's outputs, so close only once — typically the parent
+or the explicitly owned logger — to avoid double-`Close` on custom outputs
+(built-in file `Close` is idempotent, console/discard `Close` are no-ops).
+
+`Fatal` logs, then best-effort syncs every output implementing `Sync() error`
+(file, console, and discard all do), routes sync errors to the error handler,
+and calls `os.Exit(1)`. Deferred funcs — including `Close` — do not run after
+`os.Exit`, so the `Sync` step is what preserves the last line for buffered
+outputs. `Panic` logs then panics, so deferred `Close` still runs.
 
 ### Discard
 
@@ -393,6 +408,10 @@ log := tlog.New(
 )
 ```
 
+The handler runs inline on the caller's goroutine: keep it non-blocking,
+goroutine-safe, and never call back into the logger (recursive logging can
+deadlock or overflow the stack). A nil handler option is ignored.
+
 ## Design Principles
 
 - Small, composable interfaces
@@ -401,7 +420,11 @@ log := tlog.New(
 - Explicit dependencies, no hidden goroutines
 - Context-aware API — logger stored/retrieved from `context.Context`
 - Optional global logger — opt-in, no forced package-level state
-- Safe concurrency — `sync.Pool` for buffer reuse, `sync/atomic` for default logger
+- Safe concurrency — pooled buffers (oversize buffers dropped, not retained),
+  mutex-guarded outputs with full-write loops, `sync.Once` close, `atomic`
+  level + default logger
+- Custom `Formatter`/`Output` implementations must be goroutine-safe;
+  buffered outputs may implement `Sync() error` for `Fatal` durability
 - Filtered entries skip formatting entirely — near-zero overhead
 
 ## Inspiration

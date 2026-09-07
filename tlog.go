@@ -53,6 +53,8 @@ func WithOutput(o interfaces.Output) Option { return core.WithOutput(o) }
 func WithFormatter(f interfaces.Formatter) Option { return core.WithFormatter(f) }
 
 // WithErrorHandler sets a function called when a formatter or output error occurs.
+// The handler runs inline on the caller's goroutine: it must be non-blocking,
+// goroutine-safe, and must not call back into the logger. A nil fn is ignored.
 func WithErrorHandler(fn func(error)) Option { return core.WithErrorHandler(fn) }
 
 // WithCaller enables caller info (file, line, function) in log entries.

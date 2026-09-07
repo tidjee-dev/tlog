@@ -100,6 +100,23 @@ func (f *File) Write(p []byte) error {
 	return nil
 }
 
+// Sync flushes file data to stable storage in a thread-safe way.
+// It is a no-op error if the file is nil or already closed.
+func (f *File) Sync() error {
+	if f == nil {
+		return errors.New("nil file")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.closed {
+		return errors.New("sync on closed file")
+	}
+
+	return f.f.Sync()
+}
+
 // Close closes the file safely (idempotent).
 func (f *File) Close() error {
 	if f == nil {

@@ -13,3 +13,6 @@ func (*Discard) Write(_ []byte) error { return nil }
 
 // Close implements interfaces.Output. It is a no-op and returns nil.
 func (*Discard) Close() error { return nil }
+
+// Sync implements an optional flush hook. It is a no-op and returns nil.
+func (*Discard) Sync() error { return nil }

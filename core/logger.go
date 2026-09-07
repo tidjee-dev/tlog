@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"runtime"
+	"sync"
 	"sync/atomic"
 
 	"github.com/tidjee-dev/tlog/formatter/pretty"
@@ -21,6 +22,7 @@ import (
 type Logger struct {
 	cfg         Config
 	atomicLevel atomic.Uint32
+	closeOnce   sync.Once
 }
 
 // New returns a configured Logger with the given options applied.
@@ -53,7 +55,7 @@ func New(opts ...Option) *Logger {
 	if cfg.Formatter == nil && len(cfg.Outputs) > 0 {
 		var ttyConsole *console.Console
 		for _, o := range cfg.Outputs {
-			if con, ok := o.(*console.Console); ok && con.IsTTY {
+			if con, ok := o.(*console.Console); ok && con.TTY() {
 				ttyConsole = con
 				break
 			}
@@ -159,9 +161,26 @@ func (l *Logger) Error(msg string, fields ...interfaces.Field) {
 	l.log(level.Error, msg, fields...)
 }
 
-// Fatal logs at FATAL level, then calls os.Exit(1).
+// syncer is an optional Output hook for durability.
+// Outputs that buffer data should implement Sync() error;
+// Fatal calls it best-effort before os.Exit.
+type syncer interface {
+	Sync() error
+}
+
+// Fatal logs at FATAL level, best-effort syncs outputs that implement
+// Sync() error, then calls os.Exit(1). Deferred funcs (including Close)
+// do not run after os.Exit, so the Sync step is what preserves the last
+// line for buffered outputs. Sync errors are routed to the error handler.
 func (l *Logger) Fatal(msg string, fields ...interfaces.Field) {
 	l.log(level.Fatal, msg, fields...)
+	for _, out := range l.cfg.Outputs {
+		if s, ok := out.(syncer); ok {
+			if err := s.Sync(); err != nil {
+				l.cfg.ErrorHandler(err)
+			}
+		}
+	}
 	os.Exit(1)
 }
 
@@ -175,12 +194,18 @@ func (l *Logger) Panic(msg string, fields ...interfaces.Field) {
 // It should be called when the logger is no longer needed to flush and release
 // any underlying resources (e.g. open files).
 // Errors from individual outputs are routed to the error handler.
+// Close is idempotent per Logger (repeat calls are no-ops). With/WithLevel
+// children share the parent's outputs, so close only once — typically the
+// parent or the explicitly owned child — to avoid double-Close on custom
+// outputs. Built-in file output is idempotent and console Close is a no-op.
 func (l *Logger) Close() {
-	for _, out := range l.cfg.Outputs {
-		if err := out.Close(); err != nil {
-			l.cfg.ErrorHandler(err)
+	l.closeOnce.Do(func() {
+		for _, out := range l.cfg.Outputs {
+			if err := out.Close(); err != nil {
+				l.cfg.ErrorHandler(err)
+			}
 		}
-	}
+	})
 }
 
 // log is the internal dispatch path shared by all level methods.

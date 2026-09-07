@@ -72,8 +72,15 @@ func WithFormatter(f interfaces.Formatter) Option {
 
 // WithErrorHandler sets a function called when a formatter or output error
 // occurs. By default errors are silently discarded.
+// The handler is invoked inline on the caller's goroutine: it must be
+// non-blocking, goroutine-safe, and must not call back into the logger
+// (recursive logging can deadlock or overflow the stack). A nil fn keeps
+// the previous handler.
 func WithErrorHandler(fn func(error)) Option {
 	return func(c *Config) {
+		if fn == nil {
+			return
+		}
 		c.ErrorHandler = fn
 	}
 }

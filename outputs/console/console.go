@@ -11,8 +11,10 @@ import (
 
 // Console is an Output that writes to a writer (default: os.Stdout).
 // It is thread-safe. TTY detection is performed once at construction.
+// IsTTY must not be mutated after the Console is shared; configure it via
+// New(WithTTY(...)) / New(WithWriter(...)) and read it via TTY().
 type Console struct {
-	mu        sync.Mutex
+	mu        sync.RWMutex
 	w         io.Writer
 	IsTTY     bool
 	theme     styles.Styles
@@ -26,6 +28,8 @@ type Option func(*Console)
 // TTY detection is still attempted on the writer if it is an *os.File.
 func WithWriter(w io.Writer) Option {
 	return func(c *Console) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
 		c.w = w
 		c.IsTTY = isTTY(w)
 	}
@@ -36,6 +40,8 @@ func WithWriter(w io.Writer) Option {
 // configured explicitly via WithFormatter.
 func WithStyles(s styles.Styles) Option {
 	return func(c *Console) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
 		c.theme = s
 		c.hasStyles = true
 	}
@@ -45,13 +51,25 @@ func WithStyles(s styles.Styles) Option {
 // the terminal state without relying on isatty.
 func WithTTY(tty bool) Option {
 	return func(c *Console) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
 		c.IsTTY = tty
 	}
+}
+
+// TTY reports the cached TTY state in a thread-safe way.
+// Prefer it over reading IsTTY directly when the Console may be shared.
+func (c *Console) TTY() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.IsTTY
 }
 
 // Styles returns the Styles override and true if one was set via WithStyles,
 // or an empty Styles and false otherwise.
 func (c *Console) Styles() (styles.Styles, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.theme, c.hasStyles
 }
 
@@ -97,6 +115,11 @@ func (c *Console) Write(p []byte) error {
 func (c *Console) Close() error {
 	return nil
 }
+
+// Sync implements an optional flush hook.
+// Console writes are unbuffered, so this is a no-op and always returns nil.
+// It lets Fatal best-effort flush outputs that implement Sync() error.
+func (c *Console) Sync() error { return nil }
 
 // isTTY reports whether w is a TTY file descriptor.
 func isTTY(w io.Writer) bool {
